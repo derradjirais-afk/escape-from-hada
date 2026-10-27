@@ -98,7 +98,13 @@ if(dist<8){enemy.position.x+=dx/(dist||1)*dt*.75;enemy.position.z+=dz/(dist||1)*
 if(dist<.8)finish(false);
 keyObj.rotation.y+=dt*1.5;keyObj.position.y=1.38+Math.sin(performance.now()*.003)*.08;
 }renderer.render(scene,camera)}
-document.getElementById('start').onclick=start;document.getElementById('act').onclick=use;
+document.getElementById('start').addEventListener('click', function () {
+  try {
+    start();
+  } catch (e) {
+    alert('Game error: ' + e.message);
+  }
+});;document.getElementById('act').onclick=use;
 document.getElementById('restart').onclick=start;
 document.getElementById('pause').onclick=()=>{if(!gameOn)return;paused=!paused;document.getElementById('pause').textContent=paused?'▶':'Ⅱ';say(paused?'Paused':'Keep moving…');if(!paused){clock.getDelta();loop()}};
 window.addEventListener('resize',()=>{if(camera&&renderer){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}});
