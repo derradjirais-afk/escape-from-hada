@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Night House — Horror Escape</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050607;color:#eee;font-family:system-ui,Arial;touch-action:none}
+#game{position:fixed;inset:0}canvas{display:block}
+#hud{position:fixed;inset:0;pointer-events:none}
+#title{position:absolute;inset:0;background:radial-gradient(ellipse at center,#29231f 0%,#090909 65%);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;z-index:5}
+#title h1{font-size:clamp(32px,9vw,60px);letter-spacing:4px;margin:0 0 8px;text-shadow:0 0 22px #a11;color:#e7ded3}
+#title p{max-width:440px;line-height:1.55;color:#c8c0b8}
+button{border:1px solid #a99a8b;background:#251c19;color:#fff;padding:14px 22px;border-radius:9px;font-size:17px}
+#hint{position:absolute;top:14px;left:50%;transform:translateX(-50%);padding:8px 12px;background:#0009;border:1px solid #ffffff22;border-radius:8px;font-size:13px;white-space:nowrap}
+#status{position:absolute;top:56px;left:12px;background:#0008;padding:8px 10px;border-radius:8px;font-size:13px}
+#cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#ddd9;font-size:20px}
+#joy{position:absolute;left:20px;bottom:25px;width:118px;height:118px;border:2px solid #ffffff66;border-radius:50%;background:#1117;pointer-events:auto;touch-action:none}
+#knob{position:absolute;left:34px;top:34px;width:46px;height:46px;border-radius:50%;background:#ddd7;border:1px solid #fff8}
+#lookzone{position:absolute;right:0;bottom:0;width:60%;height:72%;pointer-events:auto;touch-action:none}
+#act{position:absolute;right:20px;bottom:34px;pointer-events:auto;border-radius:50%;width:70px;height:70px;padding:0;background:#231b1bd9}
+#pause{position:absolute;right:12px;top:12px;pointer-events:auto;padding:8px 12px}
+#message{position:absolute;left:50%;bottom:165px;transform:translateX(-50%);background:#000b;padding:9px 13px;border-radius:8px;text-align:center;max-width:85%;font-size:14px}
+#end{position:absolute;inset:0;background:#000d;display:none;z-index:4;align-items:center;justify-content:center;text-align:center;padding:25px}
+.small{font-size:12px;color:#bdb4ac}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="title">
+<h1>NIGHT HOUSE</h1>
+<p>A first-person horror escape game. Find the key and reach the front door before the watcher catches you.</p>
+<p class="small">Mobile controls: left joystick to move • drag the right side to look • tap USE near the key or door.</p>
+<button id="start">ENTER THE HOUSE</button>
+<p class="small">Original prototype inspired by classic escape-horror games.</p>
+</div>
+<div id="hud">
+<div id="hint">Find the key. Escape the house.</div><div id="status">KEY: NOT FOUND</div><div id="cross">+</div>
+<div id="joy"><div id="knob"></div></div><div id="lookzone"></div><button id="act">USE</button><button id="pause">Ⅱ</button><div id="message">Listen carefully…</div>
+</div>
+<div id="end"><div><h1 id="endtitle">CAUGHT</h1><p id="endtext">The house falls silent.</p><button id="restart">TRY AGAIN</button></div></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(()=> {
+const root=document.getElementById('game'), title=document.getElementById('title'), end=document.getElementById('end');
+let scene,camera,renderer,clock,player,enemy,keyObj,door,hasKey=false,gameOn=false,ended=false,paused=false;
+let yaw=0,pitch=0,joyX=0,joyY=0,lastMsg=0;
+const blockers=[], items=[];
+const mat=(c,rough=1)=>new THREE.MeshStandardMaterial({color:c,roughness:rough});
+function box(x,y,z,sx,sy,sz,material,collide=true){const o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),material);o.position.set(x,y,z);scene.add(o);if(collide)blockers.push({x,z,hx:sx/2,hz:sz/2,sy});return o}
+function setup(){
+scene=new THREE.Scene();scene.background=new THREE.Color(0x08090b);scene.fog=new THREE.FogExp2(0x08090b,.055);
+camera=new THREE.PerspectiveCamera(76,innerWidth/innerHeight,.1,100);camera.position.set(0,1.65,7);
+renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:'low-power'});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.shadowMap.enabled=false;root.innerHTML='';root.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0x8994a8,0x17100c,1.0));
+const lamp=new THREE.PointLight(0xffc58a,18,15);lamp.position.set(0,3,1);scene.add(lamp);
+const floor=mat(0x332a24), wall=mat(0x39332f), dark=mat(0x171516), wood=mat(0x4b3023), rug=mat(0x34202a), metal=mat(0x82725d);
+box(0,-.15,0,14,.3,22,floor,false);
+box(0,3,-11,14,6,.35,wall);box(-7,3,0,.35,6,22,wall);box(7,3,0,.35,6,22,wall);
+// corridor divisions leave a doorway gap
+box(-3,3,-4,.35,6,5,wall);box(3,3,-4,.35,6,5,wall);
+box(-3.2,3,3,.35,6,5,wall);box(3.2,3,3,.35,6,5,wall);
+box(0,6,0,14,.25,22,dark,false);
+for(let z=-8;z<9;z+=4){box(-5.3,1.1,z,1.7,2.2,1.2,wood);box(5.2,1.25,z+1,1.6,2.5,1.3,wood);box(-5.3,2.3,z,1.8,.12,1.3,metal,false)}
+// furniture, old table, cabinet
+box(-1.4,.65,-5,2.2,1.3,1.2,wood);box(1.6,1,-8,1.2,2,1.1,dark);
+box(0,1.5,9.4,2.2,3,.3,wood,false); // door surround
+door=box(0,1.45,9.18,1.65,2.7,.18,mat(0x251912),false);
+const knob=new THREE.Mesh(new THREE.SphereGeometry(.07,8,8),metal);knob.position.set(.58,1.3,9.05);scene.add(knob);
+const rugMesh=new THREE.Mesh(new THREE.PlaneGeometry(4,7),mat(0x3a2025));rugMesh.rotation.x=-Math.PI/2;rugMesh.position.set(0,.012,1);scene.add(rugMesh);
+// key object, bright enough to find
+keyObj=new THREE.Group();const gold=mat(0xe0b34e,.4);let ring=new THREE.Mesh(new THREE.TorusGeometry(.13,.035,8,16),gold);ring.position.x=-.13;keyObj.add(ring);let shaft=new THREE.Mesh(new THREE.BoxGeometry(.42,.055,.055),gold);shaft.position.x=.12;keyObj.add(shaft);let tooth=new THREE.Mesh(new THREE.BoxGeometry(.06,.14,.055),gold);tooth.position.set(.25,-.06,0);keyObj.add(tooth);keyObj.position.set(-1.4,1.38,-5);scene.add(keyObj);
+// Enemy: stylized eerie figure with dark dress, head and eyes
+enemy=new THREE.Group();const dress=mat(0x211e20), skin=mat(0x65564b), hair=mat(0x111012), eye= new THREE.MeshStandardMaterial({color:0xd8d2bd,emissive:0x554433});
+const body=new THREE.Mesh(new THREE.ConeGeometry(.58,1.8,8),dress);body.position.y=.95;enemy.add(body);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.32,12,10),skin);head.position.y=2.05;enemy.add(head);
+const haircap=new THREE.Mesh(new THREE.SphereGeometry(.34,12,8,0,Math.PI*2,0,Math.PI*.65),hair);haircap.position.set(0,2.13,-.03);enemy.add(haircap);
+for(const s of [-1,1]){const e=new THREE.Mesh(new THREE.SphereGeometry(.055,8,8),eye);e.position.set(s*.12,2.08,.275);enemy.add(e)}
+const armMat=mat(0x282124);for(const s of [-1,1]){let a=new THREE.Mesh(new THREE.BoxGeometry(.16,1.15,.18),armMat);a.position.set(s*.52,1.05,.02);a.rotation.z=s*.16;enemy.add(a)}
+enemy.position.set(4,0,-7);scene.add(enemy);
+player={x:0,z:7,speed:2.65};
+}
+function say(t){document.getElementById('message').textContent=t;lastMsg=performance.now()}
+function near(obj,d=1.8){return Math.hypot(camera.position.x-obj.position.x,camera.position.z-obj.position.z)<d}
+function finish(win){ended=true;gameOn=false;end.style.display='flex';document.getElementById('endtitle').textContent=win?'YOU ESCAPED':'CAUGHT';document.getElementById('endtext').textContent=win?'You made it out of the Night House.':'The watcher found you in the dark.'}
+function use(){if(!gameOn||paused)return;if(!hasKey&&near(keyObj,2.1)){hasKey=true;scene.remove(keyObj);document.getElementById('status').textContent='KEY: FOUND';say('You found the old key. Get to the front door!');return}
+if(near(door,2.4)){if(hasKey)finish(true);else say('The front door is locked. Find the key!');return}
+say('Nothing to use here. Search the rooms.')}
+function start(){if(!renderer)setup();title.style.display='none';end.style.display='none';hasKey=false;ended=false;paused=false;gameOn=true;player.x=0;player.z=7;camera.position.set(0,1.65,7);yaw=Math.PI;pitch=0;enemy.position.set(4,0,-7);scene.add(keyObj);document.getElementById('status').textContent='KEY: NOT FOUND';say('Find the key in the side room.');clock=new THREE.Clock();loop()}
+function movePlayer(dt){const forward=-joyY, side=joyX;let dx=(Math.sin(yaw)*forward+Math.cos(yaw)*side)*player.speed*dt;let dz=(Math.cos(yaw)*forward-Math.sin(yaw)*side)*player.speed*dt;
+let nx=player.x+dx,nz=player.z+dz;
+function blocked(x,z){if(x<-6.15||x>6.15||z<-10.1||z>9.8)return true;for(const b of blockers){if(Math.abs(x-b.x)<b.hx+.25&&Math.abs(z-b.z)<b.hz+.25)return true}return false}
+if(!blocked(nx,player.z))player.x=nx;if(!blocked(player.x,nz))player.z=nz;
+camera.position.x=player.x;camera.position.z=player.z;camera.rotation.order='YXZ';camera.rotation.y=yaw;camera.rotation.x=pitch;
+}
+function loop(){if(!gameOn)return;requestAnimationFrame(loop);let dt=Math.min(clock.getDelta(),.04);if(!paused){movePlayer(dt);
+let dx=player.x-enemy.position.x,dz=player.z-enemy.position.z,dist=Math.hypot(dx,dz);
+if(dist<8){enemy.position.x+=dx/(dist||1)*dt*.75;enemy.position.z+=dz/(dist||1)*dt*.75;enemy.rotation.y=Math.atan2(dx,dz)}
+if(dist<.8)finish(false);
+keyObj.rotation.y+=dt*1.5;keyObj.position.y=1.38+Math.sin(performance.now()*.003)*.08;
+}renderer.render(scene,camera)}
+document.getElementById('start').onclick=start;document.getElementById('act').onclick=use;
+document.getElementById('restart').onclick=start;
+document.getElementById('pause').onclick=()=>{if(!gameOn)return;paused=!paused;document.getElementById('pause').textContent=paused?'▶':'Ⅱ';say(paused?'Paused':'Keep moving…');if(!paused){clock.getDelta();loop()}};
+window.addEventListener('resize',()=>{if(camera&&renderer){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}});
+// Touch joystick
+const joy=document.getElementById('joy'),knob=document.getElementById('knob');let joyId=null;
+function joyMove(e){const r=joy.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;let x=e.clientX-cx,y=e.clientY-cy;const max=39,l=Math.hypot(x,y);if(l>max){x=x/l*max;y=y/l*max}joyX=x/max;joyY=y/max;knob.style.transform=`translate(${x}px,${y}px)`}
+joy.addEventListener('pointerdown',e=>{joyId=e.pointerId;joy.setPointerCapture(joyId);joyMove(e)});joy.addEventListener('pointermove',e=>{if(e.pointerId===joyId)joyMove(e)});function joyEnd(){joyId=null;joyX=joyY=0;knob.style.transform='translate(0,0)'}joy.addEventListener('pointerup',joyEnd);joy.addEventListener('pointercancel',joyEnd);
+// Drag right side to look
+const look=document.getElementById('lookzone');let lookId=null,lx=0,ly=0;
+look.addEventListener('pointerdown',e=>{lookId=e.pointerId;lx=e.clientX;ly=e.clientY;look.setPointerCapture(lookId)});
+look.addEventListener('pointermove',e=>{if(e.pointerId!==lookId||!gameOn||paused)return;let dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;yaw-=dx*.006;pitch=Math.max(-1.25,Math.min(1.25,pitch-dy*.005)});
+look.addEventListener('pointerup',()=>lookId=null);look.addEventListener('pointercancel',()=>lookId=null);
+})();
+</script>
+</body></html>
